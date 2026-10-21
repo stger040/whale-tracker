@@ -1,10 +1,24 @@
 import pg from 'pg';
+import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
+import ws from 'ws';
 import type { MarketMeta, NormalizedTrade, NotionalHistogram } from '@whale/core';
 import { BUCKET_EDGES_USD } from '@whale/core';
 
+/**
+ * Reads WHALE_DATABASE_URL — deliberately NOT DATABASE_URL, which the shared cloud
+ * environment sets to the ArbScout DB (and --env-file never overrides an existing var).
+ *
+ * WHALE_DB_DRIVER=neon-ws tunnels Postgres over WebSockets on 443 (Neon serverless driver),
+ * for hosts where outbound 5432 is blocked (e.g. Claude Code cloud sessions). Same
+ * pg.Pool API including transactions. Default 'pg' is plain TCP for EC2.
+ */
 export function createPool(): pg.Pool {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL is not set (see .env.example)');
+  const url = process.env.WHALE_DATABASE_URL;
+  if (!url) throw new Error('WHALE_DATABASE_URL is not set (see .env.example)');
+  if (process.env.WHALE_DB_DRIVER === 'neon-ws') {
+    neonConfig.webSocketConstructor = ws;
+    return new NeonPool({ connectionString: url, max: 4 }) as unknown as pg.Pool;
+  }
   return new pg.Pool({ connectionString: url, max: 4 });
 }
 

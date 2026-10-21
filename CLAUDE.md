@@ -115,7 +115,13 @@ Game series have 2 markets per event (one per team).
 
 Per-market p99 ≈ $1.0–1.9k, p99.9 ≈ $7–11k, max $96k–$248k. Trades ≥ $10k: 521; ≥ $25k: 131; ≥ $50k: 31.
 → A $10k NFL threshold would fire ~130 alerts per market per game — too noisy for a default.
-NBA (Apr 2026 single game): p99 ≈ $10k, max ≈ $70k. Thresholds must be per league.
+NBA (Apr 2026 single game): p99 ≈ $10k, max ≈ $70k. NBA PHI@NYK 2026-10-20: 158k trades, $11.7M,
+p99.9 ≈ $6.5–6.9k, max $82.5k. Thresholds must be per league.
+
+Alert-design findings from the first stored data:
+- Many of the biggest trades are **late-game buys at 90–99¢** (near-locked outcome) — low signal.
+  The $82.5k NYK YES at 33¢ was the genuinely interesting one. Classify by price / payout, not just $.
+- The two markets of a game are mirror images (PHI YES ≈ NYK NO) — aggregate per game for game-level views.
 
 Large taker orders that sweep several price levels show up as **multiple fills** — the alert logic
 should cluster same-market, same-side fills within a short window into one "whale order".
@@ -126,13 +132,20 @@ should cluster same-market, same-side fills within a short window into one "whal
 
 | Piece | Where | Status |
 |---|---|---|
-| Neon DB | Vercel-managed Neon org — create projects from **Vercel → Storage**, not neon.tech | Not created yet |
-| Website | Vercel project `whale-tracker` (currently in the Hobby team) | Empty, no Git link |
+| Neon DB | Project `whale-tracker` = `delicate-truth-19936801` (org "Vercel: SG Enterprises", us-east-1, PG 18). Vercel-managed: create projects from **Vercel → Storage**, not neon.tech | Schema applied, backfill running |
+| Website | Vercel project `whale-tracker` on the SG Enterprises team | Empty, no Git link |
 | Collector | AWS EC2 us-east-1 (separate from ArbScout's DELTIX instance) | Not provisioned |
 | Payments | Stripe (already installed as a Vercel integration on the SG Enterprises team) | Not wired |
 
-**Vercel Hobby is non-commercial.** Paid customers require the project to live on a Pro team
-(SG Enterprises). Neon on the Hobby team is the Free plan (0.5 GB/project) — too small for the backfill.
+**Vercel Hobby is non-commercial** — keep everything on the SG Enterprises team.
+
+### Database connection — read this
+- Code reads **`WHALE_DATABASE_URL`**, never `DATABASE_URL`. The shared cloud environment sets
+  `DATABASE_URL` to the **ArbScout** DB (`neon-violet-yacht`), and `tsx --env-file` does not override
+  variables that are already set — using `DATABASE_URL` would silently write into ArbScout.
+- Claude Code cloud sessions block outbound TCP 5432. Set `WHALE_DB_DRIVER=neon-ws` there (Neon
+  serverless driver over WebSockets on 443). EC2 uses the default `pg` driver.
+- The Neon MCP connector can query this project directly (`project_id: delicate-truth-19936801`).
 
 User is in Minnesota: launch scripts with `TZ=America/Chicago`; keep all date math in UTC.
 
@@ -142,7 +155,7 @@ User is in Minnesota: launch scripts with `TZ=America/Chicago`; keep all date ma
 
 ```bash
 npm install
-cp .env.example .env            # fill DATABASE_URL
+cp .env.example .env            # fill WHALE_DATABASE_URL (+ WHALE_DB_DRIVER=neon-ws in cloud sessions)
 npm run db:migrate
 npm run backfill:kalshi -- --leagues NFL --max-events 2 --dry-run   # no DB, prints stats
 TZ=America/Chicago npm run backfill:kalshi -- --leagues NFL,NBA,MLB # full, resumable
@@ -154,7 +167,7 @@ npm run typecheck
 ## Roadmap
 
 1. ✅ Repo scaffold, schema, Kalshi backfill (dry-run verified live)
-2. ⏳ Run full Kalshi backfill into Neon (needs DB)
+2. ⏳ Full Kalshi backfill into Neon — verified on 1 NBA game; full run in progress (resumable)
 3. Live collector: Kalshi + PM.US trade streams on EC2; Telegram alerts to the owner only
 4. Size report → default thresholds per league and tier boundaries
 5. `apps/web` on Vercel: auth (Clerk), alert settings, whale feed

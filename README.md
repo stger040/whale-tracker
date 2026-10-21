@@ -6,7 +6,7 @@ Real-time alerts for large trades on Kalshi and Polymarket US sports markets (NF
 
 ```bash
 npm install
-cp .env.example .env        # set DATABASE_URL
+cp .env.example .env        # set WHALE_DATABASE_URL
 npm run db:migrate
 npm run backfill:kalshi -- --leagues NFL --max-events 2 --dry-run
 ```
