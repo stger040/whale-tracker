@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { recentWhales, summary, type WhaleRow } from '@/lib/db';
 
 // Re-render at most every 30s; the collector writes whale_orders continuously.
@@ -30,7 +31,13 @@ export default async function Home() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <header className="mb-8">
-        <p className="text-sm uppercase tracking-widest text-[var(--accent)]">$PLASHSPY</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm uppercase tracking-widest text-[var(--accent)]">$PLASHSPY</p>
+          <nav className="flex gap-4 text-sm">
+            <Link href="/account" className="text-[var(--muted)] hover:text-[var(--ink)]">My alerts</Link>
+            <Link href="/auth/sign-up" className="rounded-lg bg-[var(--accent)] px-3 py-1 font-semibold text-[#0b1220]">Get alerts</Link>
+          </nav>
+        </div>
         <h1 className="mt-1 text-3xl font-bold">Where the big money is moving</h1>
         <p className="mt-2 max-w-2xl text-[var(--muted)]">
           Large orders on NBA and NFL game markets across Kalshi and Polymarket US, grouped into whole orders and

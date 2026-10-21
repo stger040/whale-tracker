@@ -22,8 +22,13 @@ subscribers. Read this before touching code. Sister project: `stger040/predictio
 - **Users choose their own whale threshold**; defaults per league come from the historical data.
 - **Alerts**: Telegram + Discord first, then email (SES), web push, SMS (SNS, needs US carrier
   registration — start early).
-- **Paid tiers via Stripe** (Free / Pro / Whale — see Roadmap). Test mode until the data-licensing
-  check below is done.
+- **Paid tiers via Stripe** (Free / Pro / Whale — see Roadmap). **On hold (2026-10-21):** owner is getting
+  an EIN + business bank account for this company first. The Stripe integration already installed on the
+  Vercel SG Enterprises team belongs to an **unrelated healthcare company — never connect it to whale-tracker.**
+  Test mode until the data-licensing check below is done.
+- **Accounts: Neon Auth** (managed Better Auth, email/password; users in `neon_auth."user"`), chosen
+  2026-10-21 over Clerk. `/auth/sign-in`, `/auth/sign-up`, protected `/account` (alert settings →
+  `user_alert_prefs`). `apps/web/lib/auth/server.ts`; `proxy.ts` protects `/account`.
 - Kalshi and PM.US feeds are **anonymous** — we can flag "someone bought $250k of YES", never *who*.
 
 **Open legal item before charging**: confirm Kalshi's and PM.US's developer / market-data terms
@@ -178,7 +183,7 @@ should cluster same-market, same-side fills within a short window into one "whal
 | Piece | Where | Status |
 |---|---|---|
 | Neon DB | Project `whale-tracker` = `delicate-truth-19936801` (org "Vercel: SG Enterprises", us-east-1, PG 18). Vercel-managed: create projects from **Vercel → Storage**, not neon.tech | Schema applied, backfill running |
-| Website | Vercel project `whale-tracker` on the SG Enterprises team | Empty, no Git link |
+| Website | Vercel project `whale-tracker` (`prj_UtDvrKKNpdITXMP8MLcNEjSPMKym`) on SG Enterprises, root `apps/web` | Preview deploys from branch; Vercel-login protected |
 | Collector | EC2 `i-0835de91f980bce2a` "whale-tracker" (t4g.small arm64, Ubuntu 24.04, us-east-1). Separate from ArbScout's DELTIX — never touch DELTIX from this project | Running |
 | Payments | Stripe (already installed as a Vercel integration on the SG Enterprises team) | Not wired |
 
@@ -211,6 +216,10 @@ should cluster same-market, same-side fills within a short window into one "whal
   `default_transaction_read_only=on`) on the **main** branch, set for preview + production. Don't use the
   integration's `DATABASE_URL` there: the Neon↔Vercel integration makes a per-git-branch DB copy
   (`preview/<branch>`) for previews, frozen at branch creation (it lacked `whale_orders` → build failure).
+- Website roles (all SQL-created, main branch): `whale_reader` (SELECT feed tables; public feed),
+  `whale_app` (SELECT feed tables + SELECT/INSERT/UPDATE `user_alert_prefs`; account page, Vercel env
+  `WHALE_APP_DATABASE_URL`). Vercel also has `WHALE_NEON_AUTH_URL` (main-branch auth, so previews share real
+  users) and `NEON_AUTH_COOKIE_SECRET`.
 - Roles created via the Neon API/console join `neon_superuser` and can't be revoked by `neondb_owner` —
   create restricted roles with SQL instead.
 - Code reads **`WHALE_DATABASE_URL`**, never `DATABASE_URL`. The shared cloud environment sets
@@ -245,8 +254,10 @@ npm run typecheck
    (`apps/collector/src/telegram.ts`: per-league `TELEGRAM_MIN_USD_<LEAGUE>`, default NFL $50k, NBA/MLB $25k,
    tennis/golf $10k; skips orders priced > `TELEGRAM_MAX_PRICE` 0.90)
 4. Size report → default thresholds per league and tier boundaries
-5. `apps/web` on Vercel: auth (Clerk), alert settings, whale feed
-6. Stripe: products/prices per tier, Checkout, Customer Portal, webhooks → `subscriptions` table
+5. ✅ `apps/web` on Vercel: whale feed, Neon Auth sign-up/sign-in, `/account` alert settings.
+   ⏳ Per-user Telegram linking (deep link `t.me/splashspybot?start=<token>`) + collector fan-out by prefs
+6. ⏸ Stripe (waiting on the new company's own Stripe account): products/prices per tier, Checkout,
+   Customer Portal, webhooks → `user_alert_prefs.tier`
 7. Channels: Discord, email, web push, SMS
 
 Tier sketch (finalize from data): **Free** — delayed/digest, 1 league, email, fixed high threshold ·

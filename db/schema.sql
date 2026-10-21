@@ -113,3 +113,19 @@ CREATE TABLE IF NOT EXISTS games (
 CREATE INDEX IF NOT EXISTS games_league_start_idx ON games (league, start_time);
 ALTER TABLE markets ADD COLUMN IF NOT EXISTS game_id TEXT;
 CREATE INDEX IF NOT EXISTS markets_game_idx ON markets (game_id);
+
+-- Per-user alert settings, edited on the website's /account page. user_id = neon_auth."user".id
+-- (Neon Auth / Better Auth). No FK into the managed neon_auth schema on purpose.
+CREATE TABLE IF NOT EXISTS user_alert_prefs (
+  user_id        TEXT        PRIMARY KEY,
+  email          TEXT,
+  leagues        TEXT[]      NOT NULL DEFAULT ARRAY['NBA','NFL'],
+  min_usd        JSONB       NOT NULL DEFAULT '{"NBA": 25000, "NFL": 50000}',  -- per-league threshold
+  max_price      NUMERIC     NOT NULL DEFAULT 0.90,   -- skip near-locks priced above this
+  platforms      TEXT[]      NOT NULL DEFAULT ARRAY['kalshi','pmus'],
+  live_only      BOOLEAN     NOT NULL DEFAULT FALSE,  -- only in-game orders
+  tier           TEXT        NOT NULL DEFAULT 'free', -- set by billing later (Stripe pending)
+  telegram_chat_id TEXT,                               -- linked via @splashspybot deep link (next step)
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
