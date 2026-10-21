@@ -155,8 +155,18 @@ Big underdog orders (<45¢) looked like +5–8 pts per order, but with one vote 
 pts — the effect was a few winning games with many piled-on orders. Dollar ROI on big underdog orders is
 positive (+29%) but driven by a handful of 3–5x payouts. **Product implication:** sell alerts as "where the
 big money is moving" (flow, size, line moves), never as "follow the whales to profit".
-Not yet tested: post-trade price impact (informed-flow test with far more statistical power), pre-game vs
-in-game orders (needs game start time), PM.US (no settled live data yet).
+**Price impact + phase (2026-10-21, `analysis/price-impact.sql` → `analysis.order_impact`, Kalshi NBA/NFL,
+orders ≤90¢; move = price of the whale's side 15 min after vs just before the order):**
+- NBA **pre-game**: $25k+ orders +0.53¢ (±0.14), $10–25k +0.28¢ (±0.10), $1–5k control +0.04¢ (±0.08) —
+  persistent, size-dependent drift toward the whale's side. NFL pre-game same shape, weaker (+0.30 ±0.29).
+  In-game moves are dominated by game events (±1–2¢ CIs). Pre-game whales still don't win more than their
+  price (NBA −1.8 ±3.1, NFL +0.1 ±5.0 pts): they move the line, the line is then fair.
+- **In-game $25k+ orders ≤90¢ won more than priced** (one vote per game): NBA +4.4 ±2.9 pts (885 games),
+  NFL +5.6 ±4.4 (398). Found after slicing many ways → treat as a hypothesis.
+- **Forward test (pre-registered 2026-10-21, do not change the rule):** Kalshi in-game orders ≥$25k at ≤90¢,
+  `first_ts ≥ 2026-10-22`, NBA+NFL, one vote per game (mean over that game's qualifying orders of
+  won − price). Evaluate after ≥300 games; the edge is confirmed only if the mean is > 0 with a 95% CI
+  excluding 0. Until then, no "smart money" claims in product copy.
 
 Large taker orders that sweep several price levels show up as **multiple fills** — the alert logic
 should cluster same-market, same-side fills within a short window into one "whale order".

@@ -66,7 +66,7 @@ SELECT grp, league, phase, count(*) AS orders, count(DISTINCT event_ticker) AS g
        round(avg(px_1m  - px_before) * 100, 2) AS move_1m_c,
        round(avg(px_5m  - px_before) * 100, 2) AS move_5m_c,
        round(avg(px_15m - px_before) * 100, 2) AS move_15m_c,
-       round(stddev(px_15m - px_before) / sqrt(count(DISTINCT event_ticker)) * 196, 2) AS ci95_15m_c
+       round((stddev(px_15m - px_before) / sqrt(count(DISTINCT event_ticker)) * 196)::numeric, 2) AS ci95_15m_c
 FROM analysis.order_impact
 WHERE px_before IS NOT NULL AND px_15m IS NOT NULL
 GROUP BY ROLLUP (grp, league, phase)
