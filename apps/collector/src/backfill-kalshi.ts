@@ -36,7 +36,7 @@ function parseArgs(argv: string[]): Args {
   };
   const since = get('--since');
   return {
-    leagues: parseLeagues(get('--leagues')),
+    leagues: parseLeagues(get('--leagues') ?? process.env.WHALE_LEAGUES),
     since: since ? new Date(`${since}T00:00:00Z`) : null,
     maxEvents: Number(get('--max-events') ?? Infinity),
     dryRun: argv.includes('--dry-run'),

@@ -16,7 +16,9 @@ subscribers. Read this before touching code. Sister project: `stger040/predictio
 
 ## Product
 
-- **Sports only**: NFL, NBA, MLB, tennis (ATP/WTA), golf (PGA).
+- **Sports only**: NFL, NBA, MLB, tennis (ATP/WTA), golf (PGA). **Current focus (2026-10-21): NBA + NFL only**
+  — `WHALE_LEAGUES=NBA,NFL` on EC2 limits live collection, backfill, daily catch-up and alerts. Other
+  leagues' code stays; data already collected (MLB ~350 games) stays in the DB. Unset to re-enable all.
 - **Users choose their own whale threshold**; defaults per league come from the historical data.
 - **Alerts**: Telegram + Discord first, then email (SES), web push, SMS (SNS, needs US carrier
   registration — start early).

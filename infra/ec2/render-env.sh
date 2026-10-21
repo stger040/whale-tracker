@@ -12,7 +12,7 @@ chmod 600 "$TMP"
   aws ssm get-parameters-by-path --region "$REGION" --path /whale-tracker/ --with-decryption \
     --query 'Parameters[].[Name,Value]' --output text |
     while IFS=$'\t' read -r name value; do printf "%s='%s'\n" "${name##*/}" "$value"; done
-  printf '%s\n' WHALE_DB_DRIVER=pg KALSHI_REQ_PER_SEC=8 MIN_STORE_USD=500 WHALE_LOG_MIN_USD=5000 TZ=America/Chicago
+  printf '%s\n' WHALE_DB_DRIVER=pg KALSHI_REQ_PER_SEC=8 MIN_STORE_USD=500 WHALE_LOG_MIN_USD=5000 TZ=America/Chicago WHALE_LEAGUES=NBA,NFL
 } > "$TMP"
 # Sanity: every line must be NAME=... (catches mangled multi-line values) — report names only.
 if bad=$(grep -vcE '^[A-Z][A-Z0-9_]*=' "$TMP"); [ "$bad" -ne 0 ]; then

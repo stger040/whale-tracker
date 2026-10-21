@@ -9,7 +9,7 @@ User=whale
 WorkingDirectory=/opt/whale-tracker/apps/collector
 EnvironmentFile=/etc/whale-tracker.env
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/opt/whale-tracker/node_modules/.bin/tsx src/backfill-kalshi.ts --leagues NFL,NBA,MLB,ATP,WTA,PGA
+ExecStart=/opt/whale-tracker/node_modules/.bin/tsx src/backfill-kalshi.ts
 # Resumable: on crash it restarts and skips markets already marked backfilled.
 Restart=on-failure
 RestartSec=30

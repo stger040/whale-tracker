@@ -16,7 +16,12 @@ export const KALSHI_SERIES: Record<League, string[]> = {
 
 export const ALL_LEAGUES = Object.keys(KALSHI_SERIES) as League[];
 
-export function parseLeagues(arg: string | undefined): League[] {
+/**
+ * Leagues to work on: explicit arg (e.g. --leagues), else WHALE_LEAGUES env, else all.
+ * WHALE_LEAGUES=NBA,NFL is set on the EC2 box (2026-10-21 focus); collected data for other
+ * leagues stays in the DB.
+ */
+export function parseLeagues(arg: string | undefined = process.env.WHALE_LEAGUES): League[] {
   if (!arg) return ALL_LEAGUES;
   const wanted = arg.split(',').map(s => s.trim().toUpperCase());
   const bad = wanted.filter(l => !(l in KALSHI_SERIES));

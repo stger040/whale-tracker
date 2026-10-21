@@ -14,7 +14,7 @@ import WebSocket from 'ws';
 import {
   KALSHI_WS, KalshiRestClient, NotionalHistogram, PMUS_WS, fetchPmusMarket, kalshiSeriesLeague,
   kalshiWsHeaders, kalshiWsTradeToRaw, normalizeKalshiMarket, normalizeKalshiTrade, normalizePmusTrade,
-  pmusSlugLeague, pmusWsHeaders, type KalshiWsTradeMsg, type League, type NormalizedTrade, type PmusTradeMsg,
+  parseLeagues, pmusSlugLeague, pmusWsHeaders, type KalshiWsTradeMsg, type League, type NormalizedTrade, type PmusTradeMsg,
 } from '@whale/core';
 import { FillClusterer } from './clusterer.js';
 import { TelegramAlerter, type MarketLabel } from './telegram.js';
@@ -35,6 +35,7 @@ const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const pool = createPool();
 const kalshiRest = new KalshiRestClient(2);
 const seriesLeague = kalshiSeriesLeague();
+const activeLeagues = new Set<League>(parseLeagues());
 const seen = await knownMarkets(pool);
 
 let tradeBuf: NormalizedTrade[] = [];
@@ -146,7 +147,7 @@ connect('KalshiWs', KALSHI_WS,
     }
     counters.kalshiMsgs++;
     const league = seriesLeague.get(m.msg.market_ticker.split('-')[0]);
-    if (!league) return;
+    if (!league || !activeLeagues.has(league)) return;
     counters.kalshiSports++;
     const eventTicker = m.msg.market_ticker.split('-').slice(0, 2).join('-');
     onTrade(normalizeKalshiTrade(kalshiWsTradeToRaw(m.msg), eventTicker, league));
@@ -161,7 +162,7 @@ connect('PmusWs', PMUS_WS,
     if (!m.trade) return; // heartbeats
     counters.pmusMsgs++;
     const league = pmusSlugLeague(m.trade.marketSlug);
-    if (!league) return;
+    if (!league || !activeLeagues.has(league)) return;
     counters.pmusSports++;
     onTrade(normalizePmusTrade(m.trade, league));
   });
@@ -233,4 +234,4 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 if (telegram.enabled) void telegram.sendText('🟢 Whale tracker collector started — watching Kalshi + Polymarket US sports.');
-log(`[Live] started minStore=${usd(MIN_STORE_USD)} whaleLog=${usd(WHALE_LOG_MIN_USD)} clusterGap=${CLUSTER_GAP_MS}ms knownMarkets=${seen.size}`);
+log(`[Live] started leagues=${[...activeLeagues].join(',')} minStore=${usd(MIN_STORE_USD)} whaleLog=${usd(WHALE_LOG_MIN_USD)} clusterGap=${CLUSTER_GAP_MS}ms knownMarkets=${seen.size}`);
