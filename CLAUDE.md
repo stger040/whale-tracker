@@ -197,6 +197,12 @@ should cluster same-market, same-side fills within a short window into one "whal
 **Vercel Hobby is non-commercial** — keep everything on the SG Enterprises team.
 
 ### Database connection — read this
+- **Website (Vercel)** reads via `WHALE_DATABASE_URL` = read-only role `whale_reader` (SQL-created; SELECT only,
+  `default_transaction_read_only=on`) on the **main** branch, set for preview + production. Don't use the
+  integration's `DATABASE_URL` there: the Neon↔Vercel integration makes a per-git-branch DB copy
+  (`preview/<branch>`) for previews, frozen at branch creation (it lacked `whale_orders` → build failure).
+- Roles created via the Neon API/console join `neon_superuser` and can't be revoked by `neondb_owner` —
+  create restricted roles with SQL instead.
 - Code reads **`WHALE_DATABASE_URL`**, never `DATABASE_URL`. The shared cloud environment sets
   `DATABASE_URL` to the **ArbScout** DB (`neon-violet-yacht`), and `tsx --env-file` does not override
   variables that are already set — using `DATABASE_URL` would silently write into ArbScout.

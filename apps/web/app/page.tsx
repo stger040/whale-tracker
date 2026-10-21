@@ -22,7 +22,10 @@ function phase(w: WhaleRow): { label: string; cls: string } {
 }
 
 export default async function Home() {
-  const [whales, stats] = await Promise.all([recentWhales(10_000, 48), summary(24)]);
+  // A DB hiccup shouldn't fail the build or the page — show an empty feed with a notice instead.
+  const [whales, stats, dbError] = await Promise.all([recentWhales(10_000, 48), summary(24)])
+    .then(([w, s]) => [w, s, null] as const)
+    .catch((err: Error) => { console.error('[feed]', err); return [[], [], err.message] as const; });
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -53,7 +56,9 @@ export default async function Home() {
 
       <section>
         <h2 className="mb-3 text-lg font-semibold">Latest whale orders <span className="text-sm font-normal text-[var(--muted)]">≥ $10k · last 48h</span></h2>
-        {whales.length === 0 ? (
+        {dbError ? (
+          <p className="text-amber-300">Feed temporarily unavailable — retrying shortly.</p>
+        ) : whales.length === 0 ? (
           <p className="text-[var(--muted)]">No whale orders yet in this window.</p>
         ) : (
           <ul className="divide-y divide-[var(--line)] overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
