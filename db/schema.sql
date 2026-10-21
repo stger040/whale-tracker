@@ -94,3 +94,22 @@ CREATE TABLE IF NOT EXISTS whale_orders (
 );
 CREATE INDEX IF NOT EXISTS whale_orders_ts_idx     ON whale_orders (first_ts DESC);
 CREATE INDEX IF NOT EXISTS whale_orders_league_idx ON whale_orders (league, first_ts DESC);
+
+-- Games from ESPN's scoreboard (authoritative start time + final score). Kalshi/PM.US markets link
+-- here via markets.game_id so trades can be labelled pre-game vs in-game.
+CREATE TABLE IF NOT EXISTS games (
+  game_id      TEXT        PRIMARY KEY,               -- 'espn:<id>'
+  league       TEXT        NOT NULL,
+  start_time   TIMESTAMPTZ NOT NULL,
+  away_abbr    TEXT        NOT NULL,                  -- ESPN abbreviations
+  home_abbr    TEXT        NOT NULL,
+  away_name    TEXT        NOT NULL,
+  home_name    TEXT        NOT NULL,
+  status       TEXT        NOT NULL,
+  away_score   INTEGER,
+  home_score   INTEGER,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS games_league_start_idx ON games (league, start_time);
+ALTER TABLE markets ADD COLUMN IF NOT EXISTS game_id TEXT;
+CREATE INDEX IF NOT EXISTS markets_game_idx ON markets (game_id);

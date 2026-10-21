@@ -3,3 +3,4 @@ export * from './leagues.js';
 export * from './histogram.js';
 export * from './kalshi.js';
 export * from './pmus.js';
+export * from './espn.js';

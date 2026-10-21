@@ -16,6 +16,8 @@ const DEFAULT_MIN_USD: Record<League, number> = { NFL: 50_000, NBA: 25_000, MLB:
 export interface MarketLabel {
   title: string | null;
   yesSubTitle: string | null;
+  /** From the ESPN games table, when the market is linked (markets.game_id). */
+  gameStart?: Date | null;
 }
 
 export class TelegramAlerter {
@@ -102,12 +104,13 @@ export function formatAlert(o: WhaleOrder, label: MarketLabel | null): string {
   const multiple = o.notionalUsd > 0 ? o.contracts / o.notionalUsd : 0;
   const when = o.firstTs.toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit', second: '2-digit' });
   const intent = o.takerIntent?.includes('SELL_') ? '\n⚠️ Closing an existing position' : '';
+  const phase = label?.gameStart ? (o.firstTs < label.gameStart ? ' · pre-game' : ' · 🔴 live') : '';
   return [
     `🐋 <b>${esc(o.league)} · ${platform}</b>`,
     `<b>${esc(pick)}</b> — ${usd(o.notionalUsd)} @ ${priceRange}`,
     `Pays ${usd(o.contracts)} if right (${multiple.toFixed(2)}x)`,
     label?.title ? `<i>${esc(label.title)}</i>` : '',
-    `${o.fills} fill${o.fills === 1 ? '' : 's'} · ${when} CT${intent}`,
+    `${o.fills} fill${o.fills === 1 ? '' : 's'} · ${when} CT${phase}${intent}`,
   ].filter(Boolean).join('\n');
 }
 

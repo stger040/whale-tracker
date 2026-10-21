@@ -18,6 +18,7 @@ import {
 } from '@whale/core';
 import { FillClusterer } from './clusterer.js';
 import { TelegramAlerter, type MarketLabel } from './telegram.js';
+import { linkMarketFromDb } from './link-games.js';
 import { addLiveStats, createPool, insertTrades, insertWhaleOrder, knownMarkets, upsertMarket, type WhaleOrder } from './db.js';
 
 const MIN_STORE_USD = Number(process.env.MIN_STORE_USD ?? 500);
@@ -48,11 +49,13 @@ const labels = new Map<string, MarketLabel>();
 async function lookupLabel(platform: string, ticker: string): Promise<MarketLabel | null> {
   const key = `${platform}:${ticker}`;
   if (labels.has(key)) return labels.get(key)!;
-  const r = await pool.query<{ title: string | null; yes_sub_title: string | null }>(
-    'SELECT title, yes_sub_title FROM markets WHERE platform = $1 AND market_ticker = $2', [platform, ticker]);
+  const r = await pool.query<{ title: string | null; yes_sub_title: string | null; start_time: Date | null }>(
+    `SELECT m.title, m.yes_sub_title, g.start_time FROM markets m LEFT JOIN games g ON g.game_id = m.game_id
+      WHERE m.platform = $1 AND m.market_ticker = $2`, [platform, ticker]);
   if (!r.rows[0]) return null;
-  const label = { title: r.rows[0].title, yesSubTitle: r.rows[0].yes_sub_title };
-  labels.set(key, label);
+  const label = { title: r.rows[0].title, yesSubTitle: r.rows[0].yes_sub_title, gameStart: r.rows[0].start_time };
+  // Only cache once linked to a game; unlinked markets get re-checked (the daily sync links them).
+  if (label.gameStart) labels.set(key, label);
   return label;
 }
 const telegram = new TelegramAlerter(lookupLabel, log);
@@ -88,19 +91,18 @@ async function registerMarket(t: NormalizedTrade): Promise<void> {
     const series = t.marketTicker.split('-')[0];
     if (m) {
       const meta = normalizeKalshiMarket(m, series, t.league);
-      labels.set(`kalshi:${t.marketTicker}`, { title: meta.title, yesSubTitle: meta.yesSubTitle });
       await upsertMarket(pool, meta);
     }
   } else {
     const m = await fetchPmusMarket(t.marketTicker, t.league);
-    if (m) labels.set(`pmus:${t.marketTicker}`, { title: m.title, yesSubTitle: m.yesSubTitle });
     await upsertMarket(pool, m ?? {
       platform: 'pmus', marketTicker: t.marketTicker, eventTicker: t.marketTicker,
       seriesTicker: `aec-${t.marketTicker.split('-')[1]}`, league: t.league,
       title: null, yesSubTitle: null, openTime: null, closeTime: null, result: null,
     });
   }
-  log(`[Markets] new ${t.platform} ${t.marketTicker}`);
+  const linked = await linkMarketFromDb(pool, t.platform, t.league, t.marketTicker, t.eventTicker).catch(() => false);
+  log(`[Markets] new ${t.platform} ${t.marketTicker}${linked ? ' (game linked)' : ''}`);
 }
 
 // ── WebSocket plumbing: reconnect with backoff, and on silence ────────────────

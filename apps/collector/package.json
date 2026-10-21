@@ -7,7 +7,9 @@
     "typecheck": "tsc -p .",
     "db:migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts",
     "backfill:kalshi": "tsx --env-file-if-exists=../../.env src/backfill-kalshi.ts",
-    "live": "tsx --env-file-if-exists=../../.env src/live.ts"
+    "live": "tsx --env-file-if-exists=../../.env src/live.ts",
+    "sync:games": "tsx --env-file-if-exists=../../.env src/sync-games.ts",
+    "sql": "tsx --env-file-if-exists=../../.env src/run-sql.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

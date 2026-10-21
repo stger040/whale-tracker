@@ -49,7 +49,8 @@ Vercel can't hold long-lived WebSockets, so the collector lives on EC2; everythi
 |---|---|
 | `packages/core` | Shared types, league→series config, `NotionalHistogram`, Kalshi REST client |
 | `apps/collector` | `backfill-kalshi.ts` (history), `live.ts` (live streams → trades/stats/whale_orders), `clusterer.ts`. Runs with `tsx` |
-| `apps/web` | (not yet) Next.js site |
+| `apps/web` | Next.js 16 + Tailwind 4 site: public whale feed (reads `whale_orders` ⋈ `markets` ⋈ `games`). Vercel project `whale-tracker` (SG Enterprises) |
+| `analysis/` | SQL studies: `whale-outcomes.sql`, `price-impact.sql` (run with `npm run sql -- <file>`) |
 | `db/schema.sql` | Idempotent schema — apply with `npm run db:migrate` |
 
 npm workspaces; Node ≥ 20; TypeScript run directly with `tsx` (no build step for the collector).
@@ -65,6 +66,11 @@ npm workspaces; Node ≥ 20; TypeScript run directly with `tsx` (no build step f
 - `whale_orders` — fills clustered into taker orders (same market + side, ≤ `CLUSTER_GAP_MS` apart,
   default 1500 ms), logged when ≥ `WHALE_LOG_MIN_USD` (default $5k). Includes VWAP, min/max price,
   `potential_payout_usd` (= contracts) and PM.US `taker_intent`. **This is the feed for alerts/website.**
+- `games` — ESPN schedule/results (`game_id = 'espn:<id>'`, exact `start_time`, scores) for NBA/NFL;
+  `markets.game_id` links Kalshi + PM.US markets (`sync-games.ts`, daily −3d…+7d; the live collector links
+  new markets on first sight via `link-games.ts`). **Kalshi's occurrence/expected_expiration fields are
+  projected game END times — use `games.start_time` for pre-game vs in-game.**
+  Team-code aliases (ESPN ↔ Kalshi/PM.US) live in `packages/core/src/espn.ts`.
 - `market_trade_stats` — per-market histogram over **all** trades (no floor): fixed USD buckets
   (`BUCKET_EDGES_USD` in `packages/core/src/histogram.ts`) + exact p50/p90/p99/p99.9/max.
   Sum `bucket_counts` across markets for league-wide distributions.
@@ -177,7 +183,7 @@ should cluster same-market, same-side fills within a short window into one "whal
 - Deploy: `git archive --format=tar.gz HEAD` → presigned PUT to `releases/whale-tracker.tgz` →
   SSM RunShellScript: download, untar into `/opt/whale-tracker`, `bash infra/ec2/bootstrap.sh`.
 - systemd units (`infra/ec2/`): `whale-live` (always on), `whale-backfill` (full history, resumable,
-  exits when done), `whale-backfill-daily.timer` (10:00 UTC, `--recent-days 3`).
+  exits when done), `whale-backfill-daily.timer` (10:00 UTC: `sync-games.ts`, then `--recent-days 3`).
 - Logs: `/var/log/whale-tracker/{live,backfill,backfill-daily}.log`; bootstrap: `/var/log/whale-bootstrap.log`.
 - **Rotating a secret** (e.g. Neon password reset): update the SSM parameter, then via SSM run
   `bash /opt/whale-tracker/infra/ec2/render-env.sh && systemctl restart whale-live whale-backfill`.

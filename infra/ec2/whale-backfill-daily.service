@@ -1,5 +1,5 @@
 [Unit]
-Description=whale-tracker daily Kalshi catch-up (markets closed in the last 3 days)
+Description=whale-tracker daily: ESPN games sync (-3d..+7d) then Kalshi catch-up (markets closed in last 3 days)
 After=network-online.target
 Wants=network-online.target
 
@@ -9,6 +9,7 @@ User=whale
 WorkingDirectory=/opt/whale-tracker/apps/collector
 EnvironmentFile=/etc/whale-tracker.env
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/whale-tracker/node_modules/.bin/tsx src/sync-games.ts
 ExecStart=/opt/whale-tracker/node_modules/.bin/tsx src/backfill-kalshi.ts --recent-days 3
 StandardOutput=append:/var/log/whale-tracker/backfill-daily.log
 StandardError=append:/var/log/whale-tracker/backfill-daily.log
