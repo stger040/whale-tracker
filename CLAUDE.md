@@ -140,6 +140,16 @@ Alert-design findings from the first stored data:
   The $82.5k NYK YES at 33¢ was the genuinely interesting one. Classify by price / payout, not just $.
 - The two markets of a game are mirror images (PHI YES ≈ NYK NO) — aggregate per game for game-level views.
 
+**Do whales win? (2026-10-21, Kalshi NFL/NBA/MLB, ~3.3M settled fills ≥$500 → orders; `analysis/whale-outcomes.sql`)**
+No robust edge. At every order size ($1k → $100k+) the whale side wins ~1–1.7 pts *less* often than its
+price implied (within ±2–3 pt CI): big money is about as well-calibrated as the market, not better.
+Big underdog orders (<45¢) looked like +5–8 pts per order, but with one vote per game the edge is −0.3 ±3.9
+pts — the effect was a few winning games with many piled-on orders. Dollar ROI on big underdog orders is
+positive (+29%) but driven by a handful of 3–5x payouts. **Product implication:** sell alerts as "where the
+big money is moving" (flow, size, line moves), never as "follow the whales to profit".
+Not yet tested: post-trade price impact (informed-flow test with far more statistical power), pre-game vs
+in-game orders (needs game start time), PM.US (no settled live data yet).
+
 Large taker orders that sweep several price levels show up as **multiple fills** — the alert logic
 should cluster same-market, same-side fills within a short window into one "whale order".
 
