@@ -8,6 +8,7 @@
  *
  *   npm run backfill:kalshi -- --leagues NFL,NBA --since 2025-09-01
  *   npm run backfill:kalshi -- --leagues NFL --max-events 3 --dry-run   # no DB, prints stats
+ *   npm run backfill:kalshi -- --recent-days 3   # daily catch-up: only markets closed in the last 3 days
  *
  * Launch with TZ=America/Chicago so log timestamps read in Central time.
  */
@@ -15,6 +16,7 @@ import {
   KalshiRestClient, KALSHI_SERIES, NotionalHistogram, normalizeKalshiMarket, normalizeKalshiTrade,
   parseLeagues, BUCKET_EDGES_USD, type League, type NormalizedTrade,
 } from '@whale/core';
+import type { KalshiMarketRaw, KalshiRestClient as KalshiClient } from '@whale/core';
 import type pg from 'pg';
 import { backfilledMarkets, createPool, finishMarket, insertTrades, upsertMarket } from './db.js';
 
@@ -23,6 +25,8 @@ interface Args {
   since: Date | null;
   maxEvents: number;
   dryRun: boolean;
+  /** If set, skip the full event walk and only process markets closed in the last N days. */
+  recentDays: number | null;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -36,7 +40,14 @@ function parseArgs(argv: string[]): Args {
     since: since ? new Date(`${since}T00:00:00Z`) : null,
     maxEvents: Number(get('--max-events') ?? Infinity),
     dryRun: argv.includes('--dry-run'),
+    recentDays: get('--recent-days') ? Number(get('--recent-days')) : null,
   };
+}
+
+/** Yields market lists lazily: pre-fetched batches first, then one fetch per event. */
+function* iterateBatches(batches: KalshiMarketRaw[][], events: { event_ticker: string }[], kalshi: KalshiClient) {
+  for (const b of batches) yield Promise.resolve(b);
+  for (const ev of events) yield kalshi.listEventMarkets(ev.event_ticker);
 }
 
 const log = (msg: string) => console.log(`${new Date().toLocaleString()} ${msg}`);
@@ -60,15 +71,21 @@ async function main(): Promise<void> {
       let tradesStored = 0;
 
       for (const series of KALSHI_SERIES[league]) {
-        const events = await kalshi.listEvents(series);
-        log(`[Backfill] ${league} ${series}: ${events.length} events`);
+        // Full mode walks every event; --recent-days asks Kalshi for just the recently closed markets.
+        const batches: KalshiMarketRaw[][] = [];
+        if (args.recentDays !== null) {
+          const recent = await kalshi.listClosedMarkets(series, now - args.recentDays * 86_400_000, now);
+          log(`[Backfill] ${league} ${series}: ${recent.length} markets closed in last ${args.recentDays}d`);
+          batches.push(recent);
+        }
+        const events = args.recentDays === null ? await kalshi.listEvents(series) : [];
+        if (args.recentDays === null) log(`[Backfill] ${league} ${series}: ${events.length} events`);
         let eventsSeen = 0;
 
-        for (const ev of events) {
+        for (const markets of iterateBatches(batches, events, kalshi)) {
           if (eventsSeen >= args.maxEvents) break;
-          const markets = await kalshi.listEventMarkets(ev.event_ticker);
           // Only markets whose trading has ended; the live collector owns open ones.
-          const closed = markets
+          const closed = (await markets)
             .map(m => normalizeKalshiMarket(m, series, league))
             .filter(m => m.closeTime && m.closeTime.getTime() < now)
             .filter(m => !args.since || (m.closeTime && m.closeTime >= args.since));

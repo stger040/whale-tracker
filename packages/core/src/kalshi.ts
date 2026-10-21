@@ -125,6 +125,15 @@ export class KalshiRestClient {
     return hist.markets ?? [];
   }
 
+  /** Markets in a series whose close_time falls in [sinceMs, untilMs] — for daily catch-up runs. */
+  async listClosedMarkets(seriesTicker: string, sinceMs: number, untilMs: number): Promise<KalshiMarketRaw[]> {
+    const out: KalshiMarketRaw[] = [];
+    for await (const page of this.paginate<KalshiMarketRaw>('/markets', 'markets', {
+      series_ticker: seriesTicker, min_close_ts: Math.floor(sinceMs / 1000), max_close_ts: Math.floor(untilMs / 1000), limit: 1000,
+    })) out.push(...page);
+    return out;
+  }
+
   /** One market by ticker (live endpoint, falling back to historical). */
   async getMarket(ticker: string): Promise<KalshiMarketRaw | null> {
     for (const path of [`/markets/${ticker}`, `/historical/markets/${ticker}`]) {

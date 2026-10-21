@@ -40,11 +40,12 @@ systemd-run --wait --pipe --quiet -p User=whale -p EnvironmentFile=/etc/whale-tr
   -p WorkingDirectory="$APP/apps/collector" -p Environment=PATH=/usr/local/bin:/usr/bin:/bin \
   "$APP/node_modules/.bin/tsx" src/migrate.ts
 
-for unit in whale-backfill whale-live; do
-  install -m 644 "$APP/infra/ec2/$unit.service" "/etc/systemd/system/$unit.service"
+for unit in whale-backfill.service whale-live.service whale-backfill-daily.service whale-backfill-daily.timer; do
+  install -m 644 "$APP/infra/ec2/$unit" "/etc/systemd/system/$unit"
 done
 systemctl daemon-reload
 systemctl enable whale-backfill.service whale-live.service
+systemctl enable --now whale-backfill-daily.timer
 # Backfill is resumable; only start it if it isn't already running (or finished).
 systemctl is-active --quiet whale-backfill.service || systemctl start whale-backfill.service
 systemctl restart whale-live.service

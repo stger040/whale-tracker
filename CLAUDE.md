@@ -41,7 +41,7 @@ Vercel can't hold long-lived WebSockets, so the collector lives on EC2; everythi
 | Path | What |
 |---|---|
 | `packages/core` | Shared types, league→series config, `NotionalHistogram`, Kalshi REST client |
-| `apps/collector` | Backfill + (next) live collector and alert sender. Runs with `tsx` |
+| `apps/collector` | `backfill-kalshi.ts` (history), `live.ts` (live streams → trades/stats/whale_orders), `clusterer.ts`. Runs with `tsx` |
 | `apps/web` | (not yet) Next.js site |
 | `db/schema.sql` | Idempotent schema — apply with `npm run db:migrate` |
 
@@ -55,6 +55,9 @@ npm workspaces; Node ≥ 20; TypeScript run directly with `tsx` (no build step f
 - `trades` — individual trades with `notional_usd ≥ MIN_STORE_USD` (default $500).
   `notional_usd = contracts × taker_price`, where `taker_price` is what the taker paid for the side
   they bought (`yes_price` if `taker_side='yes'`, else `no_price`).
+- `whale_orders` — fills clustered into taker orders (same market + side, ≤ `CLUSTER_GAP_MS` apart,
+  default 1500 ms), logged when ≥ `WHALE_LOG_MIN_USD` (default $5k). Includes VWAP, min/max price,
+  `potential_payout_usd` (= contracts) and PM.US `taker_intent`. **This is the feed for alerts/website.**
 - `market_trade_stats` — per-market histogram over **all** trades (no floor): fixed USD buckets
   (`BUCKET_EDGES_USD` in `packages/core/src/histogram.ts`) + exact p50/p90/p99/p99.9/max.
   Sum `bucket_counts` across markets for league-wide distributions.
@@ -92,6 +95,11 @@ Sports series and history depth (checked 2026-10-20):
 
 Game series have 2 markets per event (one per team).
 
+**Live WS (confirmed 2026-10-21)**: subscribe `{cmd:'subscribe', params:{channels:['trade']}}` with **no
+market_tickers** → every trade on the exchange (~160/s; crypto 15-min markets dominate). Frame fields match
+the REST tape plus `ts_ms`. Filter by series prefix. Tennis also has `KXATPCHALLENGERMATCH`, `KXITFMATCH`,
+`KXITFWMATCH` (not yet included).
+
 ## PM.US — confirmed facts
 
 - Public gateway `https://gateway.polymarket.us` (no auth); authenticated API `https://api.polymarket.us`.
@@ -103,6 +111,10 @@ Game series have 2 markets per event (one per team).
   tradeTime, maker:{side,intent}, taker:{side,intent} } }` (from official SDK
   `github.com/Polymarket/polymarket-us-typescript`, `src/websocket/types.ts`).
 - `MARKET_DATA` frames: `px` is a nested `{value, currency}` object; `qty` is a **string**, often millions.
+- **All-markets trade stream**: `SUBSCRIPTION_TYPE_TRADE` with `marketSlugs: []` streams every trade.
+  `price` = YES price; `quantity` = contracts; `taker.side` BUY → YES exposure, SELL → NO exposure;
+  `taker.intent` BUY_LONG/BUY_SHORT = opening, SELL_LONG/SELL_SHORT = closing (sometimes UNDEFINED).
+  `id` = trade id; `tradeTime` has ns precision. Parsed in `packages/core/src/pmus.ts`.
 - **No historical trades endpoint.** `/v1/markets/{slug}/trades`, `/v1/trades`, `/history` → 404;
   settled markets expose only `outcomePrices`. PM.US history = whatever we record from the live stream.
 - Binary sports markets use `aec-{league}-{away}-{home}-{date}` slugs (single slug per game).
@@ -134,8 +146,21 @@ should cluster same-market, same-side fills within a short window into one "whal
 |---|---|---|
 | Neon DB | Project `whale-tracker` = `delicate-truth-19936801` (org "Vercel: SG Enterprises", us-east-1, PG 18). Vercel-managed: create projects from **Vercel → Storage**, not neon.tech | Schema applied, backfill running |
 | Website | Vercel project `whale-tracker` on the SG Enterprises team | Empty, no Git link |
-| Collector | AWS EC2 us-east-1 (separate from ArbScout's DELTIX instance) | Not provisioned |
+| Collector | EC2 `i-0835de91f980bce2a` "whale-tracker" (t4g.small arm64, Ubuntu 24.04, us-east-1). Separate from ArbScout's DELTIX — never touch DELTIX from this project | Running |
 | Payments | Stripe (already installed as a Vercel integration on the SG Enterprises team) | Not wired |
+
+### EC2 collector box
+- Access: **SSM only** (security group `sg-0fcfb29512bd3bc92` has no inbound rules; no SSH key).
+  Role/instance profile `WHALE-TRACKER-EC2`: SSM core + read `s3://whale-tracker-deploy-597341304953/releases/*`
+  + read SSM params `/whale-tracker/*`.
+- Secrets live in **SSM Parameter Store** `/whale-tracker/*` (SecureString): `WHALE_DATABASE_URL`,
+  `KALSHI_API_KEY_ID`, `KALSHI_PRIVATE_KEY` (PEM with literal `\n`), `POLYMARKET_KEY_ID`,
+  `POLYMARKET_SECRET_KEY`. `bootstrap.sh` renders them into root-only `/etc/whale-tracker.env`.
+- Deploy: `git archive --format=tar.gz HEAD` → presigned PUT to `releases/whale-tracker.tgz` →
+  SSM RunShellScript: download, untar into `/opt/whale-tracker`, `bash infra/ec2/bootstrap.sh`.
+- systemd units (`infra/ec2/`): `whale-live` (always on), `whale-backfill` (full history, resumable,
+  exits when done), `whale-backfill-daily.timer` (10:00 UTC, `--recent-days 3`).
+- Logs: `/var/log/whale-tracker/{live,backfill,backfill-daily}.log`; bootstrap: `/var/log/whale-bootstrap.log`.
 
 **Vercel Hobby is non-commercial** — keep everything on the SG Enterprises team.
 
@@ -167,8 +192,8 @@ npm run typecheck
 ## Roadmap
 
 1. ✅ Repo scaffold, schema, Kalshi backfill (dry-run verified live)
-2. ⏳ Full Kalshi backfill into Neon — verified on 1 NBA game; full run in progress (resumable)
-3. Live collector: Kalshi + PM.US trade streams on EC2; Telegram alerts to the owner only
+2. ⏳ Full Kalshi backfill into Neon — NFL complete; running on EC2 (resumable) + daily catch-up timer
+3. ✅ Live collector on EC2 (Kalshi + PM.US → trades, stats, whale_orders). ⏳ Telegram alerts to owner
 4. Size report → default thresholds per league and tier boundaries
 5. `apps/web` on Vercel: auth (Clerk), alert settings, whale feed
 6. Stripe: products/prices per tier, Checkout, Customer Portal, webhooks → `subscriptions` table
