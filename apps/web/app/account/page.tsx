@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth/server';
 import { getPrefs } from '@/lib/prefs';
 import { signOut } from '../auth/actions';
 import { PrefsForm } from './PrefsForm';
+import { TelegramConnect } from './TelegramConnect';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Account — $PLASHSPY' };
@@ -26,8 +27,8 @@ export default async function AccountPage() {
         Signed in as {session.user.email} · plan: <span className="capitalize">{prefs.tier}</span>
       </p>
       <PrefsForm prefs={prefs} />
-      <section className="mt-8 rounded-xl border border-dashed border-[var(--line)] p-4 text-sm text-[var(--muted)]">
-        Telegram delivery: {prefs.telegramLinked ? 'connected ✓' : 'coming next — you’ll link @splashspybot from here.'}
+      <section className="mt-8 rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
+        <TelegramConnect linked={prefs.telegramLinked} />
       </section>
     </main>
   );
