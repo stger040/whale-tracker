@@ -9,3 +9,4 @@ dist/
 backfill-state/
 next-env.d.ts
 *.tsbuildinfo
+apps/web/AGENTS.md

@@ -8,17 +8,25 @@ export async function signInWithEmail(_prev: { error: string } | null, form: For
     email: String(form.get('email') ?? ''),
     password: String(form.get('password') ?? ''),
   });
-  if (error) return { error: error.message || 'Could not sign in. Check your email and password.' };
+  if (error) {
+    console.error('[auth] sign-in failed:', error.status, error.message);
+    return { error: error.message || 'Could not sign in. Check your email and password.' };
+  }
   redirect('/account');
 }
 
 export async function signUpWithEmail(_prev: { error: string } | null, form: FormData) {
+  const password = String(form.get('password') ?? '');
+  if (password !== String(form.get('confirm') ?? '')) return { error: 'Passwords don’t match.' };
   const { error } = await auth.signUp.email({
     name: String(form.get('name') ?? ''),
     email: String(form.get('email') ?? ''),
-    password: String(form.get('password') ?? ''),
+    password,
   });
-  if (error) return { error: error.message || 'Could not create your account.' };
+  if (error) {
+    console.error('[auth] sign-up failed:', error.status, error.message);
+    return { error: error.message || 'Could not create your account.' };
+  }
   redirect('/account');
 }
 
