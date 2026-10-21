@@ -21,11 +21,16 @@ tar -xzf /tmp/whale-tracker.tgz -C "$APP"
 chown -R whale:whale "$APP" /var/log/whale-tracker
 
 # Secrets → root-only env file read by systemd. Never written into the app dir.
+# Every /whale-tracker/<NAME> parameter becomes NAME='value' (single quotes: systemd keeps the
+# value literal, so the Kalshi PEM's "\n" escapes survive for the app to expand).
 {
-  echo "WHALE_DATABASE_URL=$(aws ssm get-parameter --region "$REGION" --name /whale-tracker/WHALE_DATABASE_URL --with-decryption --query Parameter.Value --output text)"
+  aws ssm get-parameters-by-path --region "$REGION" --path /whale-tracker/ --with-decryption \
+    --query 'Parameters[].[Name,Value]' --output text |
+    while IFS=$'\t' read -r name value; do echo "${name##*/}='${value}'"; done
   echo "WHALE_DB_DRIVER=pg"
   echo "KALSHI_REQ_PER_SEC=8"
   echo "MIN_STORE_USD=500"
+  echo "WHALE_LOG_MIN_USD=5000"
   echo "TZ=America/Chicago"
 } > /etc/whale-tracker.env
 chmod 600 /etc/whale-tracker.env
@@ -35,8 +40,12 @@ systemd-run --wait --pipe --quiet -p User=whale -p EnvironmentFile=/etc/whale-tr
   -p WorkingDirectory="$APP/apps/collector" -p Environment=PATH=/usr/local/bin:/usr/bin:/bin \
   "$APP/node_modules/.bin/tsx" src/migrate.ts
 
-install -m 644 "$APP/infra/ec2/whale-backfill.service" /etc/systemd/system/whale-backfill.service
+for unit in whale-backfill whale-live; do
+  install -m 644 "$APP/infra/ec2/$unit.service" "/etc/systemd/system/$unit.service"
+done
 systemctl daemon-reload
-systemctl enable whale-backfill.service
-systemctl restart whale-backfill.service
+systemctl enable whale-backfill.service whale-live.service
+# Backfill is resumable; only start it if it isn't already running (or finished).
+systemctl is-active --quiet whale-backfill.service || systemctl start whale-backfill.service
+systemctl restart whale-live.service
 echo "[bootstrap] done $(date -Is)"

@@ -20,6 +20,11 @@ export interface NormalizedTrade {
   /** contracts × takerPrice — dollars the taker put at risk. */
   notionalUsd: number;
   isBlockTrade: boolean;
+  /**
+   * PM.US only: taker's order intent, e.g. ORDER_INTENT_BUY_LONG (opening YES) vs
+   * ORDER_INTENT_SELL_SHORT (closing NO). Kalshi doesn't expose open/close, so null there.
+   */
+  takerIntent?: string | null;
 }
 
 export interface MarketMeta {

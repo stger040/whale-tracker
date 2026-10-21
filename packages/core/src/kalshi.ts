@@ -10,7 +10,9 @@
  *  - Unauthenticated rate limit is low and returns 429 {"error":{"code":"too_many_requests"}}
  *    with no Retry-After header. ~6–8 req/s sustained is OK; bursts trip it.
  */
+import { createSign, constants } from 'node:crypto';
 import type { League, MarketMeta, NormalizedTrade } from './types.js';
+import { KALSHI_SERIES as KALSHI_SERIES_REF } from './leagues.js';
 
 export const KALSHI_REST = 'https://external-api.kalshi.com/trade-api/v2';
 
@@ -123,6 +125,17 @@ export class KalshiRestClient {
     return hist.markets ?? [];
   }
 
+  /** One market by ticker (live endpoint, falling back to historical). */
+  async getMarket(ticker: string): Promise<KalshiMarketRaw | null> {
+    for (const path of [`/markets/${ticker}`, `/historical/markets/${ticker}`]) {
+      try {
+        const r = await this.get<{ market?: KalshiMarketRaw }>(path);
+        if (r.market) return r.market;
+      } catch { /* 404 → try the next endpoint */ }
+    }
+    return null;
+  }
+
   /**
    * Every trade for a market, from both the historical and live tapes (a market can straddle
    * the cutoff), de-duplicated by trade_id. Yields page by page to keep memory flat.
@@ -180,4 +193,59 @@ function backoffMs(attempt: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+//
+// Confirmed 2026-10-21: subscribing to channel 'trade' with NO market_tickers streams every
+// trade on the exchange (~160/s). Frame: { type:'trade', msg:{ trade_id, market_ticker,
+// yes_price_dollars, no_price_dollars, count_fp, taker_side, taker_outcome_side,
+// taker_book_side, is_block_trade, ts, ts_ms } } — same fields as the REST tape.
+
+
+export const KALSHI_WS = 'wss://external-api-ws.kalshi.com/trade-api/ws/v2';
+const KALSHI_WS_PATH = '/trade-api/ws/v2';
+
+export interface KalshiWsTradeMsg {
+  trade_id: string;
+  market_ticker: string;
+  yes_price_dollars: string;
+  no_price_dollars: string;
+  count_fp: string;
+  taker_side: 'yes' | 'no';
+  is_block_trade?: boolean;
+  ts_ms: number;
+}
+
+/** RSA-PSS SHA256 signature over `${ts}GET${path}`. Key may have literal "\n" escapes. */
+export function kalshiWsHeaders(keyId: string, privateKeyPem: string): Record<string, string> {
+  const ts = Date.now().toString();
+  const signer = createSign('RSA-SHA256');
+  signer.update(ts + 'GET' + KALSHI_WS_PATH);
+  signer.end();
+  const signature = signer.sign(
+    { key: privateKeyPem.replace(/\\n/g, '\n'), padding: constants.RSA_PKCS1_PSS_PADDING, saltLength: constants.RSA_PSS_SALTLEN_DIGEST },
+    'base64',
+  );
+  return { 'KALSHI-ACCESS-KEY': keyId, 'KALSHI-ACCESS-TIMESTAMP': ts, 'KALSHI-ACCESS-SIGNATURE': signature };
+}
+
+export function kalshiWsTradeToRaw(m: KalshiWsTradeMsg): KalshiTradeRaw {
+  return {
+    trade_id: m.trade_id,
+    ticker: m.market_ticker,
+    created_time: new Date(m.ts_ms).toISOString(),
+    count_fp: m.count_fp,
+    yes_price_dollars: m.yes_price_dollars,
+    no_price_dollars: m.no_price_dollars,
+    taker_side: m.taker_side,
+    is_block_trade: m.is_block_trade,
+  };
+}
+
+/** Series → league lookup for live filtering, e.g. 'KXNBAGAME' → 'NBA'. */
+export function kalshiSeriesLeague(): Map<string, League> {
+  const out = new Map<string, League>();
+  for (const [league, series] of Object.entries(KALSHI_SERIES_REF)) for (const s of series) out.set(s, league as League);
+  return out;
 }

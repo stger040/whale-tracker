@@ -43,19 +43,19 @@ export async function backfilledMarkets(pool: pg.Pool, platform: string): Promis
 }
 
 export async function insertTrades(pool: pg.Pool, trades: NormalizedTrade[]): Promise<void> {
-  // Batched multi-row insert; 12 params per row keeps us well under pg's 65535 limit at 1000 rows.
+  // Batched multi-row insert; 13 params per row keeps us well under pg's 65535 limit at 1000 rows.
   for (let i = 0; i < trades.length; i += 1000) {
     const chunk = trades.slice(i, i + 1000);
     const values: unknown[] = [];
     const rows = chunk.map((t, j) => {
       values.push(t.platform, t.tradeId, t.marketTicker, t.eventTicker, t.league, t.ts,
-        t.takerSide, t.takerPrice, t.yesPrice, t.contracts, t.notionalUsd, t.isBlockTrade);
-      const o = j * 12;
-      return `(${Array.from({ length: 12 }, (_, k) => `$${o + k + 1}`).join(',')})`;
+        t.takerSide, t.takerPrice, t.yesPrice, t.contracts, t.notionalUsd, t.isBlockTrade, t.takerIntent ?? null);
+      const o = j * 13;
+      return `(${Array.from({ length: 13 }, (_, k) => `$${o + k + 1}`).join(',')})`;
     });
     await pool.query(
       `INSERT INTO trades (platform, trade_id, market_ticker, event_ticker, league, ts, taker_side,
-                           taker_price, yes_price, contracts, notional_usd, is_block_trade)
+                           taker_price, yes_price, contracts, notional_usd, is_block_trade, taker_intent)
        VALUES ${rows.join(',')} ON CONFLICT DO NOTHING`,
       values,
     );
@@ -94,4 +94,68 @@ export async function finishMarket(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Adds live-collected bucket counts to a market's histogram (element-wise). Percentile columns
+ * stay as they were (exact percentiles need every trade). For Kalshi, the backfill later
+ * overwrites the row with exact full-history stats once the market closes; for PM.US this
+ * live accumulation is the only source.
+ */
+export async function addLiveStats(
+  pool: pg.Pool, platform: string, marketTicker: string, league: string,
+  counts: number[], sums: number[], firstTs: Date, lastTs: Date, maxUsd: number,
+): Promise<void> {
+  const n = counts.reduce((a, b) => a + b, 0);
+  const total = sums.reduce((a, b) => a + b, 0);
+  await pool.query(
+    `INSERT INTO market_trade_stats AS s (platform, market_ticker, league, trade_count, total_notional, max_usd,
+       bucket_edges_usd, bucket_counts, bucket_sums, first_trade_ts, last_trade_ts)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (platform, market_ticker) DO UPDATE SET
+       trade_count    = s.trade_count + EXCLUDED.trade_count,
+       total_notional = s.total_notional + EXCLUDED.total_notional,
+       max_usd        = GREATEST(s.max_usd, EXCLUDED.max_usd),
+       bucket_counts  = (SELECT array_agg(a + b ORDER BY i) FROM unnest(s.bucket_counts, EXCLUDED.bucket_counts) WITH ORDINALITY AS u(a, b, i)),
+       bucket_sums    = (SELECT array_agg(a + b ORDER BY i) FROM unnest(s.bucket_sums, EXCLUDED.bucket_sums) WITH ORDINALITY AS u(a, b, i)),
+       first_trade_ts = LEAST(s.first_trade_ts, EXCLUDED.first_trade_ts),
+       last_trade_ts  = GREATEST(s.last_trade_ts, EXCLUDED.last_trade_ts),
+       computed_at    = now()`,
+    [platform, marketTicker, league, n, total, maxUsd, [...BUCKET_EDGES_USD], counts, sums, firstTs, lastTs],
+  );
+}
+
+export interface WhaleOrder {
+  platform: string;
+  marketTicker: string;
+  eventTicker: string;
+  league: string;
+  takerSide: 'yes' | 'no';
+  takerIntent: string | null;
+  firstTs: Date;
+  lastTs: Date;
+  fills: number;
+  contracts: number;
+  notionalUsd: number;
+  vwapPrice: number;
+  minPrice: number;
+  maxPrice: number;
+  tradeIds: string[];
+}
+
+export async function insertWhaleOrder(pool: pg.Pool, w: WhaleOrder): Promise<void> {
+  await pool.query(
+    `INSERT INTO whale_orders (platform, market_ticker, event_ticker, league, taker_side, taker_intent,
+       first_ts, last_ts, fills, contracts, notional_usd, vwap_price, min_price, max_price,
+       potential_payout_usd, trade_ids)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     ON CONFLICT (platform, market_ticker, first_ts, taker_side) DO NOTHING`,
+    [w.platform, w.marketTicker, w.eventTicker, w.league, w.takerSide, w.takerIntent, w.firstTs, w.lastTs,
+     w.fills, w.contracts, w.notionalUsd, w.vwapPrice, w.minPrice, w.maxPrice, w.contracts, w.tradeIds],
+  );
+}
+
+export async function knownMarkets(pool: pg.Pool): Promise<Set<string>> {
+  const r = await pool.query<{ k: string }>(`SELECT platform || ':' || market_ticker AS k FROM markets`);
+  return new Set(r.rows.map(x => x.k));
 }

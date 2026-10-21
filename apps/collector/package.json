@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "db:migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts",
-    "backfill:kalshi": "tsx --env-file-if-exists=../../.env src/backfill-kalshi.ts"
+    "backfill:kalshi": "tsx --env-file-if-exists=../../.env src/backfill-kalshi.ts",
+    "live": "tsx --env-file-if-exists=../../.env src/live.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
