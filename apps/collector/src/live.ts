@@ -58,7 +58,7 @@ async function lookupLabel(platform: string, ticker: string): Promise<MarketLabe
   if (label.gameStart) labels.set(key, label);
   return label;
 }
-const telegram = new TelegramAlerter(lookupLabel, log);
+const telegram = new TelegramAlerter(pool, lookupLabel, log);
 
 const clusterer = new FillClusterer(CLUSTER_GAP_MS, o => {
   void telegram.consider(o).catch(err => log(`[Telegram] ${err}`));
@@ -218,7 +218,7 @@ setInterval(async () => {
     }
   }
   log(`[Stats] kalshi=${counters.kalshiSports}/${counters.kalshiMsgs} pmus=${counters.pmusSports}/${counters.pmusMsgs} ` +
-      `stored=${counters.stored} whales=${counters.whales} tg=${telegram.sent} markets=${batch.length} err=${counters.errors}`);
+      `stored=${counters.stored} whales=${counters.whales} tg=${telegram.sent}/${telegram.subscriberCount}subs markets=${batch.length} err=${counters.errors}`);
 }, STATS_FLUSH_MS);
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
@@ -235,5 +235,4 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-if (telegram.enabled) void telegram.sendText('🟢 Whale tracker collector started — watching Kalshi + Polymarket US sports.');
 log(`[Live] started leagues=${[...activeLeagues].join(',')} minStore=${usd(MIN_STORE_USD)} whaleLog=${usd(WHALE_LOG_MIN_USD)} clusterGap=${CLUSTER_GAP_MS}ms knownMarkets=${seen.size}`);

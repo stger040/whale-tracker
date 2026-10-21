@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth/server';
-import { LEAGUES, savePrefs, type League } from '@/lib/prefs';
+import { LEAGUES, TELEGRAM_BOT, createTelegramLinkToken, savePrefs, unlinkTelegram, type League } from '@/lib/prefs';
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
@@ -27,4 +27,18 @@ export async function saveAlertPrefs(_prev: { ok?: boolean; error?: string } | n
   });
   revalidatePath('/account');
   return { ok: true };
+}
+
+export async function startTelegramLink(): Promise<{ url?: string; error?: string }> {
+  const { data: session } = await auth.getSession();
+  if (!session?.user) return { error: 'Please sign in again.' };
+  const token = await createTelegramLinkToken(session.user.id);
+  return { url: `https://t.me/${TELEGRAM_BOT}?start=${token}` };
+}
+
+export async function disconnectTelegram() {
+  const { data: session } = await auth.getSession();
+  if (!session?.user) return;
+  await unlinkTelegram(session.user.id);
+  revalidatePath('/account');
 }

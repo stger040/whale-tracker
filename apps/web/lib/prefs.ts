@@ -60,3 +60,19 @@ export async function savePrefs(userId: string, email: string, p: Omit<AlertPref
       max_price = EXCLUDED.max_price, platforms = EXCLUDED.platforms, live_only = EXCLUDED.live_only,
       updated_at = now()`;
 }
+
+export const TELEGRAM_BOT = 'splashspybot';
+
+/** Creates a 15-minute one-time code; the collector's bot links the chat on "/start <code>". */
+export async function createTelegramLinkToken(userId: string): Promise<string> {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  const token = Buffer.from(bytes).toString('base64url'); // 32 chars of [A-Za-z0-9_-], valid as a start param
+  await appSql()`
+    INSERT INTO telegram_link_tokens (token, user_id, expires_at)
+    VALUES (${token}, ${userId}, now() + interval '15 minutes')`;
+  return token;
+}
+
+export async function unlinkTelegram(userId: string): Promise<void> {
+  await appSql()`UPDATE user_alert_prefs SET telegram_chat_id = NULL, updated_at = now() WHERE user_id = ${userId}`;
+}

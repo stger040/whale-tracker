@@ -129,3 +129,12 @@ CREATE TABLE IF NOT EXISTS user_alert_prefs (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- One-time Telegram link codes: /account creates one (15 min), the collector's bot consumes it on
+-- "/start <token>" and sets user_alert_prefs.telegram_chat_id.
+CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+  token       TEXT        PRIMARY KEY,
+  user_id     TEXT        NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

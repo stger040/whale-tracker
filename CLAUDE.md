@@ -217,7 +217,7 @@ should cluster same-market, same-side fills within a short window into one "whal
   integration's `DATABASE_URL` there: the Neon↔Vercel integration makes a per-git-branch DB copy
   (`preview/<branch>`) for previews, frozen at branch creation (it lacked `whale_orders` → build failure).
 - Website roles (all SQL-created, main branch): `whale_reader` (SELECT feed tables; public feed),
-  `whale_app` (SELECT feed tables + SELECT/INSERT/UPDATE `user_alert_prefs`; account page, Vercel env
+  `whale_app` (SELECT feed tables + SELECT/INSERT/UPDATE `user_alert_prefs` + INSERT `telegram_link_tokens`; account page, Vercel env
   `WHALE_APP_DATABASE_URL`). Vercel also has `WHALE_NEON_AUTH_URL` (main-branch auth, so previews share real
   users) and `NEON_AUTH_COOKIE_SECRET`.
 - Roles created via the Neon API/console join `neon_superuser` and can't be revoked by `neondb_owner` —
@@ -250,12 +250,18 @@ npm run typecheck
 
 1. ✅ Repo scaffold, schema, Kalshi backfill (dry-run verified live)
 2. ⏳ Full Kalshi backfill into Neon — NFL complete; running on EC2 (resumable) + daily catch-up timer
-3. ✅ Live collector on EC2 (Kalshi + PM.US → trades, stats, whale_orders) + owner Telegram alerts
-   (`apps/collector/src/telegram.ts`: per-league `TELEGRAM_MIN_USD_<LEAGUE>`, default NFL $50k, NBA/MLB $25k,
-   tennis/golf $10k; skips orders priced > `TELEGRAM_MAX_PRICE` 0.90)
+3. ✅ Live collector on EC2 (Kalshi + PM.US → trades, stats, whale_orders) + Telegram alerts
+   (`apps/collector/src/telegram.ts`): fan-out to every `user_alert_prefs` row with `telegram_chat_id`, filtered
+   by that user's leagues / per-league `min_usd` / platforms / `max_price` / `live_only`. Owner's
+   `TELEGRAM_CHAT_ID` gets env defaults (NFL $50k, NBA $25k, ≤90¢; `TELEGRAM_MIN_USD_<LEAGUE>` overrides)
+   unless that chat is linked to an account. Paced ≤1 msg/s per chat, ≤25/s overall; 403 → auto-unlink.
+   **Linking:** `/account` → "Connect Telegram" inserts a 15-min code into `telegram_link_tokens` →
+   `t.me/splashspybot?start=<code>`; the collector long-polls `getUpdates` (it must be the only consumer —
+   never set a webhook or run a second collector) and handles `/start <code>` and `/stop`.
 4. Size report → default thresholds per league and tier boundaries
-5. ✅ `apps/web` on Vercel: whale feed, Neon Auth sign-up/sign-in, `/account` alert settings.
-   ⏳ Per-user Telegram linking (deep link `t.me/splashspybot?start=<token>`) + collector fan-out by prefs
+5. ✅ `apps/web` on Vercel: whale feed, Neon Auth sign-up/sign-in, `/account` alert settings + Telegram linking.
+   Production = `main` → https://whale-tracker-ashen.vercel.app (Git-connected; still behind Vercel login
+   until a custom domain or protection change). Other branches → preview deployments.
 6. ⏸ Stripe (waiting on the new company's own Stripe account): products/prices per tier, Checkout,
    Customer Portal, webhooks → `user_alert_prefs.tier`
 7. Channels: Discord, email, web push, SMS
