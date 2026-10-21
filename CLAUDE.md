@@ -7,6 +7,11 @@ subscribers. Read this before touching code. Sister project: `stger040/predictio
 **This app never places orders.** Do not add order-placement code. The shared cloud environment has
 `AUTO_TRADE=true` / `KALSHI_USE_PROD=true` set for ArbScout; nothing here reads them.
 
+> **⚠️ Open security item (2026-10-21):** fragments of the Kalshi RSA private key were printed into a
+> Claude session transcript while debugging the EC2 env file. The owner chose to rotate it on their planned
+> schedule (~2026-10-28) — it is shared with ArbScout (DELTIX `.env`, cloud env). After rotation, update
+> `/whale-tracker/KALSHI_API_KEY_ID` + `/whale-tracker/KALSHI_PRIVATE_KEY` and run the rotation procedure below.
+
 ---
 
 ## Product
@@ -155,7 +160,8 @@ should cluster same-market, same-side fills within a short window into one "whal
   + read SSM params `/whale-tracker/*`.
 - Secrets live in **SSM Parameter Store** `/whale-tracker/*` (SecureString): `WHALE_DATABASE_URL`,
   `KALSHI_API_KEY_ID`, `KALSHI_PRIVATE_KEY` (PEM with literal `\n`), `POLYMARKET_KEY_ID`,
-  `POLYMARKET_SECRET_KEY`. `bootstrap.sh` renders them into root-only `/etc/whale-tracker.env`.
+  `POLYMARKET_SECRET_KEY`, `TELEGRAM_BOT_TOKEN` (@splashspybot, "$PLASHSPY"), `TELEGRAM_CHAT_ID`
+  (owner's private chat). `bootstrap.sh` renders them into root-only `/etc/whale-tracker.env`.
 - Deploy: `git archive --format=tar.gz HEAD` → presigned PUT to `releases/whale-tracker.tgz` →
   SSM RunShellScript: download, untar into `/opt/whale-tracker`, `bash infra/ec2/bootstrap.sh`.
 - systemd units (`infra/ec2/`): `whale-live` (always on), `whale-backfill` (full history, resumable,
@@ -201,7 +207,9 @@ npm run typecheck
 
 1. ✅ Repo scaffold, schema, Kalshi backfill (dry-run verified live)
 2. ⏳ Full Kalshi backfill into Neon — NFL complete; running on EC2 (resumable) + daily catch-up timer
-3. ✅ Live collector on EC2 (Kalshi + PM.US → trades, stats, whale_orders). ⏳ Telegram alerts to owner
+3. ✅ Live collector on EC2 (Kalshi + PM.US → trades, stats, whale_orders) + owner Telegram alerts
+   (`apps/collector/src/telegram.ts`: per-league `TELEGRAM_MIN_USD_<LEAGUE>`, default NFL $50k, NBA/MLB $25k,
+   tennis/golf $10k; skips orders priced > `TELEGRAM_MAX_PRICE` 0.90)
 4. Size report → default thresholds per league and tier boundaries
 5. `apps/web` on Vercel: auth (Clerk), alert settings, whale feed
 6. Stripe: products/prices per tier, Checkout, Customer Portal, webhooks → `subscriptions` table

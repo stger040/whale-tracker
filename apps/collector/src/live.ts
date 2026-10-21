@@ -17,6 +17,7 @@ import {
   pmusSlugLeague, pmusWsHeaders, type KalshiWsTradeMsg, type League, type NormalizedTrade, type PmusTradeMsg,
 } from '@whale/core';
 import { FillClusterer } from './clusterer.js';
+import { TelegramAlerter, type MarketLabel } from './telegram.js';
 import { addLiveStats, createPool, insertTrades, insertWhaleOrder, knownMarkets, upsertMarket, type WhaleOrder } from './db.js';
 
 const MIN_STORE_USD = Number(process.env.MIN_STORE_USD ?? 500);
@@ -41,7 +42,22 @@ const whaleBuf: WhaleOrder[] = [];
 const stats = new Map<string, { platform: string; ticker: string; league: League; h: NotionalHistogram; first: Date; last: Date }>();
 const counters = { kalshiMsgs: 0, kalshiSports: 0, pmusMsgs: 0, pmusSports: 0, stored: 0, whales: 0, errors: 0 };
 
+// Market labels for alerts: filled when a market is registered, else looked up in the DB once.
+const labels = new Map<string, MarketLabel>();
+async function lookupLabel(platform: string, ticker: string): Promise<MarketLabel | null> {
+  const key = `${platform}:${ticker}`;
+  if (labels.has(key)) return labels.get(key)!;
+  const r = await pool.query<{ title: string | null; yes_sub_title: string | null }>(
+    'SELECT title, yes_sub_title FROM markets WHERE platform = $1 AND market_ticker = $2', [platform, ticker]);
+  if (!r.rows[0]) return null;
+  const label = { title: r.rows[0].title, yesSubTitle: r.rows[0].yes_sub_title };
+  labels.set(key, label);
+  return label;
+}
+const telegram = new TelegramAlerter(lookupLabel, log);
+
 const clusterer = new FillClusterer(CLUSTER_GAP_MS, o => {
+  void telegram.consider(o).catch(err => log(`[Telegram] ${err}`));
   if (o.notionalUsd < WHALE_LOG_MIN_USD) return;
   whaleBuf.push(o);
   counters.whales++;
@@ -69,9 +85,14 @@ async function registerMarket(t: NormalizedTrade): Promise<void> {
   if (t.platform === 'kalshi') {
     const m = await kalshiRest.getMarket(t.marketTicker);
     const series = t.marketTicker.split('-')[0];
-    if (m) await upsertMarket(pool, normalizeKalshiMarket(m, series, t.league));
+    if (m) {
+      const meta = normalizeKalshiMarket(m, series, t.league);
+      labels.set(`kalshi:${t.marketTicker}`, { title: meta.title, yesSubTitle: meta.yesSubTitle });
+      await upsertMarket(pool, meta);
+    }
   } else {
     const m = await fetchPmusMarket(t.marketTicker, t.league);
+    if (m) labels.set(`pmus:${t.marketTicker}`, { title: m.title, yesSubTitle: m.yesSubTitle });
     await upsertMarket(pool, m ?? {
       platform: 'pmus', marketTicker: t.marketTicker, eventTicker: t.marketTicker,
       seriesTicker: `aec-${t.marketTicker.split('-')[1]}`, league: t.league,
@@ -194,7 +215,7 @@ setInterval(async () => {
     }
   }
   log(`[Stats] kalshi=${counters.kalshiSports}/${counters.kalshiMsgs} pmus=${counters.pmusSports}/${counters.pmusMsgs} ` +
-      `stored=${counters.stored} whales=${counters.whales} markets=${batch.length} err=${counters.errors}`);
+      `stored=${counters.stored} whales=${counters.whales} tg=${telegram.sent} markets=${batch.length} err=${counters.errors}`);
 }, STATS_FLUSH_MS);
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
@@ -211,4 +232,5 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
+if (telegram.enabled) void telegram.sendText('🟢 Whale tracker collector started — watching Kalshi + Polymarket US sports.');
 log(`[Live] started minStore=${usd(MIN_STORE_USD)} whaleLog=${usd(WHALE_LOG_MIN_USD)} clusterGap=${CLUSTER_GAP_MS}ms knownMarkets=${seen.size}`);
