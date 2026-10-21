@@ -1,0 +1,20 @@
+[Unit]
+Description=whale-tracker Kalshi historical backfill (resumable)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=whale
+WorkingDirectory=/opt/whale-tracker/apps/collector
+EnvironmentFile=/etc/whale-tracker.env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/whale-tracker/node_modules/.bin/tsx src/backfill-kalshi.ts --leagues NFL,NBA,MLB,ATP,WTA,PGA
+# Resumable: on crash it restarts and skips markets already marked backfilled.
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/var/log/whale-tracker/backfill.log
+StandardError=append:/var/log/whale-tracker/backfill.log
+
+[Install]
+WantedBy=multi-user.target
