@@ -20,20 +20,8 @@ aws s3 cp --region "$REGION" "s3://$BUCKET/releases/whale-tracker.tgz" /tmp/whal
 tar -xzf /tmp/whale-tracker.tgz -C "$APP"
 chown -R whale:whale "$APP" /var/log/whale-tracker
 
-# Secrets → root-only env file read by systemd. Never written into the app dir.
-# Every /whale-tracker/<NAME> parameter becomes NAME='value' (single quotes: systemd keeps the
-# value literal, so the Kalshi PEM's "\n" escapes survive for the app to expand).
-{
-  aws ssm get-parameters-by-path --region "$REGION" --path /whale-tracker/ --with-decryption \
-    --query 'Parameters[].[Name,Value]' --output text |
-    while IFS=$'\t' read -r name value; do echo "${name##*/}='${value}'"; done
-  echo "WHALE_DB_DRIVER=pg"
-  echo "KALSHI_REQ_PER_SEC=8"
-  echo "MIN_STORE_USD=500"
-  echo "WHALE_LOG_MIN_USD=5000"
-  echo "TZ=America/Chicago"
-} > /etc/whale-tracker.env
-chmod 600 /etc/whale-tracker.env
+# Secrets → root-only env file read by systemd (never written into the app dir).
+bash "$APP/infra/ec2/render-env.sh"
 
 sudo -u whale -H bash -c "cd $APP && /usr/local/bin/npm ci --no-audit --no-fund"
 systemd-run --wait --pipe --quiet -p User=whale -p EnvironmentFile=/etc/whale-tracker.env \

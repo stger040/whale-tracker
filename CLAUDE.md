@@ -161,6 +161,14 @@ should cluster same-market, same-side fills within a short window into one "whal
 - systemd units (`infra/ec2/`): `whale-live` (always on), `whale-backfill` (full history, resumable,
   exits when done), `whale-backfill-daily.timer` (10:00 UTC, `--recent-days 3`).
 - Logs: `/var/log/whale-tracker/{live,backfill,backfill-daily}.log`; bootstrap: `/var/log/whale-bootstrap.log`.
+- **Rotating a secret** (e.g. Neon password reset): update the SSM parameter, then via SSM run
+  `bash /opt/whale-tracker/infra/ec2/render-env.sh && systemctl restart whale-live whale-backfill`.
+  - SSM `AWS-RunShellScript` runs **sh/dash**, not bash: always call scripts with `bash …`. dash's `echo`
+    expands `\n` in the Kalshi PEM and breaks the env file (happened 2026-10-21).
+  - **Never print `/etc/whale-tracker.env`** or any slice of it (`cut`, `head`, `cat`) — it holds private
+    keys. List variable names only: `cut -d= -f1`. `render-env.sh` already validates line format.
+- A Neon password reset immediately breaks new DB connections on the box; the live collector requeues
+  unsaved trades/whale orders/stats in memory (cap 200k trades) until the DB is reachable again.
 
 **Vercel Hobby is non-commercial** — keep everything on the SG Enterprises team.
 

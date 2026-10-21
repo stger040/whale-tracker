@@ -25,6 +25,8 @@ const CLUSTER_GAP_MS = Number(process.env.CLUSTER_GAP_MS ?? 1500);
 const FLUSH_MS = 5_000;
 const STATS_FLUSH_MS = 60_000;
 const SILENCE_RECONNECT_MS = 60_000;
+/** On DB outages, keep at most this many unsaved trades in memory (oldest dropped first). */
+const MAX_PENDING_TRADES = 200_000;
 
 const log = (msg: string) => console.log(`${new Date().toLocaleString()} ${msg}`);
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
@@ -34,7 +36,7 @@ const kalshiRest = new KalshiRestClient(2);
 const seriesLeague = kalshiSeriesLeague();
 const seen = await knownMarkets(pool);
 
-const tradeBuf: NormalizedTrade[] = [];
+let tradeBuf: NormalizedTrade[] = [];
 const whaleBuf: WhaleOrder[] = [];
 const stats = new Map<string, { platform: string; ticker: string; league: League; h: NotionalHistogram; first: Date; last: Date }>();
 const counters = { kalshiMsgs: 0, kalshiSports: 0, pmusMsgs: 0, pmusSports: 0, stored: 0, whales: 0, errors: 0 };
@@ -150,16 +152,27 @@ setInterval(async () => {
   clusterer.sweep();
   if (flushing) return;
   flushing = true;
+  const trades = tradeBuf.splice(0);
   try {
-    const trades = tradeBuf.splice(0);
     if (trades.length) { await insertTrades(pool, trades); counters.stored += trades.length; }
-    for (const w of whaleBuf.splice(0)) await insertWhaleOrder(pool, w);
   } catch (err) {
+    // Requeue (inserts are idempotent) so a DB outage — e.g. a rotated password — doesn't lose data.
+    tradeBuf = trades.concat(tradeBuf); // concat, not unshift(...): backlog can exceed arg limits
+    if (tradeBuf.length > MAX_PENDING_TRADES) tradeBuf = tradeBuf.slice(tradeBuf.length - MAX_PENDING_TRADES);
     counters.errors++;
-    log(`[Flush] ${err}`);
-  } finally {
-    flushing = false;
+    log(`[Flush] trades: ${err} (pending=${tradeBuf.length})`);
   }
+  while (whaleBuf.length) {
+    try {
+      await insertWhaleOrder(pool, whaleBuf[0]);
+      whaleBuf.shift();
+    } catch (err) {
+      counters.errors++;
+      log(`[Flush] whale_orders: ${err} (pending=${whaleBuf.length})`);
+      break;
+    }
+  }
+  flushing = false;
 }, FLUSH_MS);
 
 setInterval(async () => {
@@ -169,6 +182,13 @@ setInterval(async () => {
     try {
       await addLiveStats(pool, s.platform, s.ticker, s.league, s.h.counts, s.h.sums, s.first, s.last, s.h.max() ?? 0);
     } catch (err) {
+      // Merge back into the next cycle rather than dropping the counts.
+      const key = `${s.platform}:${s.ticker}`;
+      const cur = stats.get(key);
+      if (cur) {
+        s.h.counts.forEach((c, i) => { cur.h.counts[i] += c; cur.h.sums[i] += s.h.sums[i]; });
+        if (s.first < cur.first) cur.first = s.first;
+      } else stats.set(key, s);
       counters.errors++;
       log(`[Stats] ${s.ticker}: ${err}`);
     }
