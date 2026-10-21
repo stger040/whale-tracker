@@ -1,0 +1,27 @@
+{
+  "name": "@whale/collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "db:migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts",
+    "backfill:kalshi": "tsx --env-file-if-exists=../../.env src/backfill-kalshi.ts",
+    "live": "tsx --env-file-if-exists=../../.env src/live.ts",
+    "sync:games": "tsx --env-file-if-exists=../../.env src/sync-games.ts",
+    "sql": "tsx --env-file-if-exists=../../.env src/run-sql.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "@whale/core": "0.1.0",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

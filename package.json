@@ -1,0 +1,20 @@
+{
+  "name": "whale-tracker",
+  "private": true,
+  "description": "Whale trade detection and alerts for Kalshi and Polymarket US sports markets",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:migrate": "npm run db:migrate -w @whale/collector",
+    "backfill:kalshi": "npm run backfill:kalshi -w @whale/collector --",
+    "live": "npm run live -w @whale/collector",
+    "sync:games": "npm run sync:games -w @whale/collector --",
+    "sql": "npm run sql -w @whale/collector --"
+  }
+}

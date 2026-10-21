@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the whale-tracker Kalshi catch-up daily after the night's games
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
